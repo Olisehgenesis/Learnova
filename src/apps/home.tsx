@@ -13,8 +13,7 @@ function Home() {
 
   return (
     <div>
-      <h2>Welcome to the Multi-App Platform</h2>
-      <button onClick={handleLogin}>Login</button>
+
     </div>
   );
 }

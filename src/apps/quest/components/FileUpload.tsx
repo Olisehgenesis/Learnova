@@ -1,141 +1,178 @@
-
-//fileupload
-import React, { useState, useRef } from 'react';
-import { Upload, FileText, Loader } from 'lucide-react';
+import React, { useState } from 'react';
+import { saveDocument, saveQuiz } from '../../../lib/db';
 
 function FileUpload({ onFileProcessed, genAI }) {
-  const [file, setFile] = useState(null);
-  const [error, setError] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const fileInputRef = useRef(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [numQuestions, setNumQuestions] = useState(5);
+  const [requiredPassScore, setRequiredPassScore] = useState(70);
+  const [limitTakers, setLimitTakers] = useState(false);
+  const [takerLimit, setTakerLimit] = useState(0);
+  const [totalRewardsUSDC, setTotalRewardsUSDC] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    setFile(selectedFile);
-    setError(null);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type === 'text/plain') {
-      setFile(droppedFile);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setFile(e.target.files[0]);
       setError(null);
-    } else {
-      setError('Please drop a valid text file.');
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) {
-      setError('Please select a file first.');
+    if (!file) return;
+
+    if (totalRewardsUSDC < 0 || totalRewardsUSDC > 1000000) {
+      setError("Total rewards must be between 0 and 1,000,000 USDC.");
       return;
     }
 
-    setIsProcessing(true);
+    setIsLoading(true);
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const text = e.target.result;
+      const text = e.target?.result as string;
       try {
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
         // Generate summary
-        const summaryResult = await model.generateContent(`
-          Summarize the following text in about 2-3 sentences:
-          ${text}
-        `);
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+        const summaryResult = await model.generateContent(`Summarize this text: ${text}`);
         const summary = summaryResult.response.text();
 
         // Generate questions
-        const questionsResult = await model.generateContent(`
-          Based on the following text, generate 5 multiple-choice questions. 
-          For each question, provide 4 options (A, B, C, D) and indicate the correct answer.
-          Format your response as a JSON array of question objects, like this:
-          [
-            {
-              "id": 1,
-              "text": "What is the capital of France?",
-              "optionA": "London",
-              "optionB": "Berlin",
-              "optionC": "Paris",
-              "optionD": "Madrid",
-              "correctAnswer": "C"
-            },
-            // ... more questions
-          ]
-          
-          Text to base the questions on:
-          ${text}
-        `);
-        const questionsJson = questionsResult.response.text();
-        const questions = JSON.parse(questionsJson);
+        const questionsResult = await model.generateContent(`Generate ${numQuestions} multiple-choice questions based on this text. For each question, provide 4 options labeled A, B, C, and D. Format the output as follows:
+        Question 1: [Question text]
+        A. [Option A]
+        B. [Option B]
+        C. [Option C]
+        D. [Option D]
 
-        onFileProcessed({ summary, questions });
+        Repeat this format for all ${numQuestions} questions.`);
+        const questionsText = questionsResult.response.text();
+        const questions = questionsText.split('\n\n').map((q, index) => {
+          const [questionText, ...options] = q.split('\n');
+          return {
+            id: index + 1,
+            text: questionText.replace(/^Question \d+: /, ''),
+            options: options.map(opt => opt.substring(3))
+          };
+        });
+
+        // Save document and quiz to database
+        const documentId = await saveDocument(text, summary);
+        const quizId = await saveQuiz(
+            documentId,
+            JSON.stringify(questions),
+            numQuestions,
+            requiredPassScore,
+            limitTakers,
+            limitTakers ? takerLimit : null,
+            totalRewardsUSDC
+        );
+
+        onFileProcessed({
+          summary,
+          questions,
+          documentId,
+          quizId,
+          numQuestions,
+          requiredPassScore,
+          limitTakers,
+          takerLimit: limitTakers ? takerLimit : null,
+          totalRewardsUSDC,
+          totalRewardsTokens: Number((totalRewardsUSDC / 0.00654).toFixed(6))
+        });
       } catch (error) {
         console.error('Error processing file:', error);
         setError("An error occurred while processing the file. Please try again.");
       } finally {
-        setIsProcessing(false);
+        setIsLoading(false);
       }
     };
     reader.readAsText(file);
   };
 
   return (
-      <div className="max-w-md mx-auto mt-10">
-        <form onSubmit={handleSubmit} className="mb-4">
-          <div
-              className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 transition-colors"
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current.click()}
-          >
+      <form onSubmit={handleSubmit} className="max-w-2xl mx-auto space-y-4">
+        <div>
+          <label className="block mb-2 font-semibold">Upload Document:</label>
+          <input type="file" onChange={handleFileChange} className="w-full" />
+        </div>
+
+        <div>
+          <label className="block mb-2 font-semibold">Number of Questions (max 15):</label>
+          <input
+              type="number"
+              min="1"
+              max="15"
+              value={numQuestions}
+              onChange={(e) => setNumQuestions(Math.min(15, parseInt(e.target.value)))}
+              className="w-full p-2 border rounded"
+          />
+        </div>
+
+        <div>
+          <label className="block mb-2 font-semibold">Required Pass Score (%):</label>
+          <input
+              type="number"
+              min="0"
+              max="100"
+              value={requiredPassScore}
+              onChange={(e) => setRequiredPassScore(parseInt(e.target.value))}
+              className="w-full p-2 border rounded"
+          />
+        </div>
+
+        <div>
+          <label className="flex items-center">
             <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-                accept=".txt"
+                type="checkbox"
+                checked={limitTakers}
+                onChange={(e) => setLimitTakers(e.target.checked)}
+                className="mr-2"
             />
-            <Upload className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-1 text-sm text-gray-600">
-              {file ? file.name : 'Drag and drop your file here, or click to select'}
-            </p>
-          </div>
-          {file && (
-              <div className="mt-4 flex items-center justify-between bg-gray-100 p-2 rounded">
-                <div className="flex items-center">
-                  <FileText className="h-5 w-5 text-blue-500 mr-2" />
-                  <span className="text-sm font-medium text-gray-700">{file.name}</span>
-                </div>
-                <button
-                    type="submit"
-                    disabled={isProcessing}
-                    className={`${
-                        isProcessing ? 'bg-gray-400' : 'bg-blue-500 hover:bg-blue-600'
-                    } text-white px-4 py-2 rounded transition-colors flex items-center`}
-                >
-                  {isProcessing ? (
-                      <>
-                        <Loader className="animate-spin h-5 w-5 mr-2" />
-                        Processing...
-                      </>
-                  ) : (
-                      'Generate Quiz'
-                  )}
-                </button>
-              </div>
-          )}
-          {error && <p className="text-red-500 mt-2">{error}</p>}
-        </form>
-      </div>
+            <span className="font-semibold">Limit Number of Takers</span>
+          </label>
+        </div>
+
+        {limitTakers && (
+            <div>
+              <label className="block mb-2 font-semibold">Taker Limit:</label>
+              <input
+                  type="number"
+                  min="1"
+                  value={takerLimit}
+                  onChange={(e) => setTakerLimit(parseInt(e.target.value))}
+                  className="w-full p-2 border rounded"
+              />
+            </div>
+        )}
+
+        <div>
+          <label className="block mb-2 font-semibold">Total Rewards (USDC):</label>
+          <input
+              type="number"
+              min="0"
+              max="1000000"
+              step="0.01"
+              value={totalRewardsUSDC}
+              onChange={(e) => setTotalRewardsUSDC(parseFloat(e.target.value))}
+              className="w-full p-2 border rounded"
+          />
+        </div>
+
+        <div>
+          <p className="font-semibold">Equivalent LearnNova Tokens: {(totalRewardsUSDC / 0.00654).toFixed(6)}</p>
+        </div>
+
+        <button
+            type="submit"
+            className={`w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={isLoading}
+        >
+          {isLoading ? 'Processing...' : 'Upload and Process'}
+        </button>
+
+        {error && <p className="text-red-500 mt-2">{error}</p>}
+      </form>
   );
 }
 
