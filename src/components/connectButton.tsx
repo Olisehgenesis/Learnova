@@ -2,6 +2,16 @@ import client from "../lib/client";
 import { base, baseSepolia } from "thirdweb/chains";
 import { ConnectButton } from "thirdweb/react";
 
+import {inAppWallet, createWallet } from "thirdweb/wallets";
+
+
+
+
+const coinBaseWallet = createWallet("com.coinbase.wallet"); // pass the wallet id
+
+const inAppwallet = inAppWallet(
+
+)
 // Define tokens for both Base and BaseSepolia networks
 const tokensBase = [
     {
@@ -24,6 +34,8 @@ const ConnectButtonComponent = () => {
             client={client}
             chain={baseSepolia} // Default chain
             chains={[base, baseSepolia]} // Supported chains
+            recommendedWallets={[coinBaseWallet]}
+            wallets={[coinBaseWallet, inAppwallet]}
             supportedTokens={{
                 [base.id]: tokensBase, // Tokens for Base
                 [baseSepolia.id]: tokensBaseSepolia, // Tokens for Base Sepolia

@@ -1,5 +1,5 @@
 // src/apps/Home.tsx
-import React from "react";
+
 import { useNavigate } from "react-router-dom";
 
 function Home() {
@@ -8,7 +8,7 @@ function Home() {
   const handleLogin = () => {
     // Add login logic here
     // For now, let's just redirect to the invoicing app
-    navigate("/invoicing");
+    navigate("/quests");
   };
 
   return (

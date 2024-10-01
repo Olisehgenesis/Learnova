@@ -25,7 +25,7 @@ function App() {
               <main className="container mx-auto px-4 py-8">
                 <Routes>
                   <Route path="/" element={<Home />} />
-                  <Route path="/quests" element={<QuizzApp/>} />
+                  <Route path="/create" element={<QuizzApp/>} />
                 </Routes>
               </main>
             </div>
