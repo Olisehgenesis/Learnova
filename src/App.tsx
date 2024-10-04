@@ -6,7 +6,6 @@ import QuizzApp from "./apps/quest/Index";
 import "./index.css";
 import ErrorBoundary from "./ErrorBoundary";
 import { genAI } from "./lib/genAI";
-import { initializeTables } from "./lib/db";
 import QuestBrowser from "./apps/QuestBrowser";
 import AttemptQuiz from "./apps/AttemptQuiz";
 
@@ -20,7 +19,6 @@ function App() {
   useEffect(() => {
     const initDB = async () => {
       try {
-        await initializeTables();
         setDbInitialized(true);
         console.log("Database tables initialized successfully");
       } catch (error) {
